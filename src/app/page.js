@@ -17,6 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { getAnswer } from '@/app/actions';
 
 const emotionEmojis = {
   'Alegría': '😊',
@@ -41,8 +42,25 @@ const EmotionAnalysis = () => {
   const [feedbackSent, setFeedbackSent] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState('');
   const [showConsentModal, setShowConsentModal] = useState(false);
-  const [consentGiven, setConsentGiven] = useState(false);
   const [pendingFeedback, setPendingFeedback] = useState(null);
+  const [llmResponse, setLlmResponse] = useState('');
+
+  const speakText = (text) => {
+    if ('speechSynthesis' in window) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'es-MX';
+      
+      const voices = speechSynthesis.getVoices();
+      const spanishVoice = voices.find(voice => voice.lang.startsWith('es-MX'));
+      if (spanishVoice) {
+        utterance.voice = spanishVoice;
+      }
+      
+      speechSynthesis.speak(utterance);
+    } else {
+      console.log("Text-to-speech not supported in this browser.");
+    }
+  };
 
   const analyzeEmotion = async () => {
     setLoading(true);
@@ -53,7 +71,7 @@ const EmotionAnalysis = () => {
     setShowFeedback(false);
     setFeedbackSent(false);
     setFeedbackMessage('');
-    setConsentGiven(false);
+    setLlmResponse('');
     try {
       const response = await fetch(`/emotion?sentence=${encodeURIComponent(sentence)}`);
       const data = await response.json();
@@ -66,6 +84,19 @@ const EmotionAnalysis = () => {
       setEmotions(processedData);
       setSelectedEmotion(data.emocion);
       setResultId(data.id);
+      
+      // Get LLM response
+      try {
+        const answer = await getAnswer(sentence, data.emocion);
+        setLlmResponse(answer);
+        if (process.env.NEXT_PUBLIC_SPEAK_RESPONSE === 'true') {
+          speakText(answer);
+        }
+      }
+      catch (error) {
+        console.error('Error al generar respuesta LLM:', error);
+        setLlmResponse('');
+      }
     } catch (error) {
       console.error('Error al analizar la emoción:', error);
     } finally {
@@ -102,7 +133,6 @@ const EmotionAnalysis = () => {
   };
 
   const handleConsentResponse = (consent) => {
-    setConsentGiven(consent);
     if (consent) {
       submitFeedback();
     } else {
@@ -165,12 +195,19 @@ const EmotionAnalysis = () => {
               </div>
             ) : emotions ? (
               <div className="w-full">
+                {llmResponse && (
+                  <Card className="mb-6 bg-purple-100">
+                    <CardHeader>
+                      <p className="text-gray-700">{llmResponse}</p>
+                    </CardHeader>
+                  </Card>
+                )}
                 <h2 className="mb-4 text-2xl font-semibold text-center text-purple-800">
                   Resultados del Análisis
                 </h2>
                 {selectedEmotion && (
                   <p className="mb-4 text-xl text-center">
-                    Emoción detectada: <span className="font-bold text-purple-600">{selectedEmotion} {emotionEmojis[selectedEmotion]}</span>
+                    Emoción detectada: <span className="text-2xl font-bold text-purple-600">{selectedEmotion} {emotionEmojis[selectedEmotion]}</span>
                   </p>
                 )}
                 <div className="w-full h-64">
